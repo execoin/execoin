@@ -17,7 +17,7 @@ Execoin is a lite version of Bitcoin using scrypt-progressive-N as a proof-of-wo
  - subsidy halves in 840k blocks (~437 days)
  - ~84 million total coins
  - 50 coins per block
- - 1920 blocks to retarget difficulty
+ - Kimoto Gravity Well difficulty adjustment
 
 For more information, as well as an immediately useable, binary version of
 the Execoin client sofware, see http://www.execoin.net.
