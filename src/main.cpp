@@ -1256,8 +1256,8 @@ unsigned int static GetNextWorkRequired_legacy(const CBlockIndex* pindexLast, co
  {
          static const int64        BlocksTargetSpacing                        = 45; // 45 seconds
          unsigned int              TimeDaySeconds                             = 60 * 60 * 24;
-         int64                     PastSecondsMin                             = TimeDaySeconds * 0.25;
-         int64                     PastSecondsMax                             = TimeDaySeconds * 7;
+         int64                     PastSecondsMin                             = TimeDaySeconds * 0.075;
+         int64                     PastSecondsMax                             = TimeDaySeconds * 2.1;
          uint64                    PastBlocksMin                              = PastSecondsMin / BlocksTargetSpacing;
          uint64                    PastBlocksMax                              = PastSecondsMax / BlocksTargetSpacing;        
          
