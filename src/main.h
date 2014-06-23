@@ -450,8 +450,8 @@ public:
 
     std::string ToString() const
     {
-        if (scriptPubKey.size() < 6)
-            return "CTxOut(error)";
+//        if (scriptPubKey.size() < 6)
+//            return "CTxOut(error)";
         return strprintf("CTxOut(nValue=%"PRI64d".%08"PRI64d", scriptPubKey=%s)", nValue / COIN, nValue % COIN, scriptPubKey.ToString().substr(0,30).c_str());
     }
 
