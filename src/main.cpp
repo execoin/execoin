@@ -1094,13 +1094,71 @@ unsigned char GetNfactor(int64 nTimestamp) {
     return min(max(N, minNfactor), maxNfactor);
 }
 
+int64 GetFastNetworkHashPS(int lookup) {
+    CBlockIndex *pb = pindexBest;
+    if (pb == NULL || !pb->nHeight)
+        return 0;
+
+    // If lookup is -1, then use 120 blocks
+    if (lookup <= 0)
+        lookup = 120;
+
+    // If lookup is larger than chain, then set it to chain length.
+    if (lookup > pb->nHeight)
+        lookup = pb->nHeight;
+
+    CBlockIndex *pb0 = pb;
+    int64 minTime = pb0->GetBlockTime();
+    int64 maxTime = minTime;
+    for (int i = 0; i < lookup; i++) {
+        pb0 = pb0->pprev;
+        int64 time = pb0->GetBlockTime();
+        minTime = std::min(time, minTime);
+        maxTime = std::max(time, maxTime);
+    }
+
+    // In case there's a situation where minTime == maxTime, we don't want a divide by zero exception.
+    if (minTime == maxTime)
+        return 0;
+
+    uint256 workDiff = pb->nChainWork - pb0->nChainWork;
+    int64 timeDiff = maxTime - minTime;
+
+    return (boost::int64_t)(workDiff.getdouble() / timeDiff);
+}
+
 int64 static GetBlockValue(int nHeight, int64 nFees)
 {
-    int64 nSubsidy = 50 * COIN;
+    int RewardMode = 1;
+    int64 nSubsidy = 0;
+    int LookUpBlocks = 60;
+//    printf ("NetworkHashPS on last 60 blocks: %lld\n", GetFastNetworkHashPS(LookUpBlocks));
+    if (fTestNet) {
+        if (nHeight >= 64) { RewardMode = 2; }  // New reward mode after 64 blocks in testnet
+    }
+    else {
+        if (nHeight >= 307770) { RewardMode = 2; } // July 30, 2014 - New Rewards
+    }
 
-    // Subsidy is cut in half every 840000 blocks, which will occur approximately every 437 days
-    nSubsidy >>= (nHeight / 840000); // Execoin: 840k blocks in ~437 days
-
+    if (RewardMode == 1) { //legacy reward mode
+        nSubsidy = 50 * COIN;
+        // Subsidy is cut in half every 840000 blocks, which will occur approximately every 437 days
+        nSubsidy >>= (nHeight / 840000); // Execoin: 840k blocks in ~437 days
+        return nSubsidy + nFees;
+    }
+    else if (RewardMode == 2) { //new reward mode
+        int64 hashrate=GetFastNetworkHashPS(LookUpBlocks);
+        int64 gigahash = 1024*1024*1024;
+        int64 hashlimit = 9 * gigahash;
+        if (hashrate <= hashlimit) {
+            nSubsidy = (20 - 5*sqrt(double(hashrate)/double(gigahash)))*COIN;
+        }
+        else {
+            nSubsidy = 5*COIN;
+        }
+        for (int i = 321210; i <= nHeight; i += 13440) nSubsidy *= 0.975; //cut reward by 2.5% every week
+        return nSubsidy + nFees;
+    }
     return nSubsidy + nFees;
 }
 
@@ -1203,9 +1261,9 @@ unsigned int static GetNextWorkRequired_legacy(const CBlockIndex* pindexLast, co
     return bnNew.GetCompact();
 }
 
- 
- 
- unsigned int static KimotoGravityWell(const CBlockIndex* pindexLast, const CBlockHeader *pblock, uint64 TargetBlocksSpacingSeconds, uint64 PastBlocksMin, uint64 PastBlocksMax) {
+
+
+unsigned int static KimotoGravityWell(const CBlockIndex* pindexLast, const CBlockHeader *pblock, uint64 TargetBlocksSpacingSeconds, uint64 PastBlocksMin, uint64 PastBlocksMax) {
          /* current difficulty formula - kimoto gravity well */
          const CBlockIndex *BlockLastSolved                             = pindexLast;
          const CBlockIndex *BlockReading                                = pindexLast;
@@ -1256,13 +1314,70 @@ unsigned int static GetNextWorkRequired_legacy(const CBlockIndex* pindexLast, co
          }
      if (bnNew > bnProofOfWorkLimit) { bnNew = bnProofOfWorkLimit; }        
          return bnNew.GetCompact();
- }
- 
- 
- 
- // Using KGW
- unsigned int static GetNextWorkRequired_new(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
- {
+}
+
+unsigned int static DarkGravityWave3(const CBlockIndex* pindexLast, const CBlockHeader *pblock) {
+    /* current difficulty formula, execoin - DarkGravity v3, written by Evan Duffield - evan@darkcoin.io */
+    const CBlockIndex *BlockLastSolved = pindexLast;
+    const CBlockIndex *BlockReading = pindexLast;
+    const CBlockHeader *BlockCreating = pblock;
+    BlockCreating = BlockCreating;
+    int64 nActualTimespan = 0;
+    int64 LastBlockTime = 0;
+    int64 PastBlocksMin = 32;
+    int64 PastBlocksMax = 32;
+    int64 CountBlocks = 0;
+    CBigNum PastDifficultyAverage;
+    CBigNum PastDifficultyAveragePrev;
+
+    if (BlockLastSolved == NULL || BlockLastSolved->nHeight == 0 || BlockLastSolved->nHeight < PastBlocksMin) { 
+        return bnProofOfWorkLimit.GetCompact(); 
+    }
+        
+    for (unsigned int i = 1; BlockReading && BlockReading->nHeight > 0; i++) {
+        if (PastBlocksMax > 0 && i > PastBlocksMax) { break; }
+        CountBlocks++;
+
+        if(CountBlocks <= PastBlocksMin) {
+            if (CountBlocks == 1) { PastDifficultyAverage.SetCompact(BlockReading->nBits); }
+            else { PastDifficultyAverage = ((PastDifficultyAveragePrev * CountBlocks)+(CBigNum().SetCompact(BlockReading->nBits))) / (CountBlocks+1); }
+            PastDifficultyAveragePrev = PastDifficultyAverage;
+        }
+
+        if(LastBlockTime > 0){
+            int64 Diff = (LastBlockTime - BlockReading->GetBlockTime());
+            nActualTimespan += Diff;
+        }
+        LastBlockTime = BlockReading->GetBlockTime();      
+
+        if (BlockReading->pprev == NULL) { assert(BlockReading); break; }
+        BlockReading = BlockReading->pprev;
+    }
+    
+    CBigNum bnNew(PastDifficultyAverage);
+
+    int64 nTargetTimespan = CountBlocks*nTargetSpacing;
+
+    if (nActualTimespan < nTargetTimespan/3)
+        nActualTimespan = nTargetTimespan/3;
+    if (nActualTimespan > nTargetTimespan*3)
+        nActualTimespan = nTargetTimespan*3;
+
+    // Retarget
+    bnNew *= nActualTimespan;
+    bnNew /= nTargetTimespan;
+
+    if (bnNew > bnProofOfWorkLimit){
+        bnNew = bnProofOfWorkLimit;
+    }
+     
+    return bnNew.GetCompact();
+}
+
+
+// Using KGW
+unsigned int static GetNextWorkRequired_new(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
+{
          static const int64        BlocksTargetSpacing                        = 45; // 45 seconds
          unsigned int              TimeDaySeconds                             = 60 * 60 * 24;
          int64                     PastSecondsMin                             = TimeDaySeconds * 0.075;
@@ -1271,27 +1386,27 @@ unsigned int static GetNextWorkRequired_legacy(const CBlockIndex* pindexLast, co
          uint64                    PastBlocksMax                              = PastSecondsMax / BlocksTargetSpacing;        
          
          return KimotoGravityWell(pindexLast, pblock, BlocksTargetSpacing, PastBlocksMin, PastBlocksMax);
- }
- 
- 
- 
- unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
- {
+}
+
+
+
+unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
+{
          int DiffMode = 1; // legacy diff-mode
          if (fTestNet) {
-            if (pindexLast->nHeight+1 >= 2120) { DiffMode = 2; }  // 200 blocks after first legacy diff adjustment
+             if (pindexLast->nHeight+1 >= 64) { DiffMode = 3; }  // DGW3 after 64 blocks
          }
-         else {         
-         	if (pindexLast->nHeight+1 >= 43847) { DiffMode = 2; } // 5 days after 2014-03-11 00:00:04 UTC
+         else {
+              if (pindexLast->nHeight+1 >= 307770) { DiffMode = 3; } // July 30, 2014 - DGW3
+              else if (pindexLast->nHeight+1 >= 43847) { DiffMode = 2; } // 5 days after 2014-03-11 00:00:04 UTC
          }
-         
+
          if             (DiffMode == 1) { return GetNextWorkRequired_legacy(pindexLast, pblock); } //legacy diff mode
          else if        (DiffMode == 2) { return GetNextWorkRequired_new(pindexLast, pblock); } // KGW
-         return GetNextWorkRequired_new(pindexLast, pblock); // KGW
- }
- 
- 
- 
+         else if (DiffMode == 3) { return DarkGravityWave3(pindexLast, pblock); }
+         return DarkGravityWave3(pindexLast, pblock); // DGW3
+}
+
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits)
 {
