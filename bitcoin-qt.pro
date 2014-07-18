@@ -1,7 +1,7 @@
 TEMPLATE = app
 TARGET = execoin-qt
 macx:TARGET = "Execoin-Qt"
-VERSION = 0.8.6.2
+VERSION = 0.8.6.3
 INCLUDEPATH += src src/json src/qt c:/deps/qrencode-3.4.3
 QT += core gui network
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets

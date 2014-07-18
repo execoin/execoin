@@ -1,3 +1,11 @@
+0.8.6.3 changes
+=============
+
+- Rebuild against OpenSSL 1.0.1h
+
+- Added OP_RETURN support (relaying stealth transactions' ephemkeys)
+
+
 0.8.6.2 changes
 =============
 
