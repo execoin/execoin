@@ -1094,45 +1094,10 @@ unsigned char GetNfactor(int64 nTimestamp) {
     return min(max(N, minNfactor), maxNfactor);
 }
 
-int64 GetFastNetworkHashPS(int lookup) {
-    CBlockIndex *pb = pindexBest;
-    if (pb == NULL || !pb->nHeight)
-        return 0;
-
-    // If lookup is -1, then use 120 blocks
-    if (lookup <= 0)
-        lookup = 120;
-
-    // If lookup is larger than chain, then set it to chain length.
-    if (lookup > pb->nHeight)
-        lookup = pb->nHeight;
-
-    CBlockIndex *pb0 = pb;
-    int64 minTime = pb0->GetBlockTime();
-    int64 maxTime = minTime;
-    for (int i = 0; i < lookup; i++) {
-        pb0 = pb0->pprev;
-        int64 time = pb0->GetBlockTime();
-        minTime = std::min(time, minTime);
-        maxTime = std::max(time, maxTime);
-    }
-
-    // In case there's a situation where minTime == maxTime, we don't want a divide by zero exception.
-    if (minTime == maxTime)
-        return 0;
-
-    uint256 workDiff = pb->nChainWork - pb0->nChainWork;
-    int64 timeDiff = maxTime - minTime;
-
-    return (boost::int64_t)(workDiff.getdouble() / timeDiff);
-}
-
 int64 static GetBlockValue(int nHeight, int64 nFees)
 {
     int RewardMode = 1;
     int64 nSubsidy = 0;
-    int LookUpBlocks = 60;
-//    printf ("NetworkHashPS on last 60 blocks: %lld\n", GetFastNetworkHashPS(LookUpBlocks));
     if (fTestNet) {
         if (nHeight >= 64) { RewardMode = 2; }  // New reward mode after 64 blocks in testnet
     }
@@ -1144,20 +1109,10 @@ int64 static GetBlockValue(int nHeight, int64 nFees)
         nSubsidy = 50 * COIN;
         // Subsidy is cut in half every 840000 blocks, which will occur approximately every 437 days
         nSubsidy >>= (nHeight / 840000); // Execoin: 840k blocks in ~437 days
-        return nSubsidy + nFees;
     }
     else if (RewardMode == 2) { //new reward mode
-        int64 hashrate=GetFastNetworkHashPS(LookUpBlocks);
-        int64 gigahash = 1024*1024*1024;
-        int64 hashlimit = 9 * gigahash;
-        if (hashrate <= hashlimit) {
-            nSubsidy = (20 - 5*sqrt(double(hashrate)/double(gigahash)))*COIN;
-        }
-        else {
-            nSubsidy = 5*COIN;
-        }
+        nSubsidy = 20 * COIN;
         for (int i = 321210; i <= nHeight; i += 13440) nSubsidy *= 0.975; //cut reward by 2.5% every week
-        return nSubsidy + nFees;
     }
     return nSubsidy + nFees;
 }
@@ -1324,8 +1279,8 @@ unsigned int static DarkGravityWave3(const CBlockIndex* pindexLast, const CBlock
     BlockCreating = BlockCreating;
     int64 nActualTimespan = 0;
     int64 LastBlockTime = 0;
-    int64 PastBlocksMin = 32;
-    int64 PastBlocksMax = 32;
+    int64 PastBlocksMin = 60;
+    int64 PastBlocksMax = 60;
     int64 CountBlocks = 0;
     CBigNum PastDifficultyAverage;
     CBigNum PastDifficultyAveragePrev;
